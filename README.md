@@ -1,35 +1,37 @@
-The Cloud Waste Reaper
-======================
-# Introduction
-The Cloud Waste Reaper is a Python CLI tool designed to detect and report on orphaned EBS volumes in AWS, helping you identify and eliminate cloud waste.
+# The Cloud Waste Reaper
 
-# Requirements
-- Python 3.7+
-- boto3
-- tabulate
-- argparse
+The Cloud Waste Reaper is a Python CLI tool designed to detect and manage cloud waste, specifically orphaned EBS volumes in AWS. This tool uses the boto3 library to interact with AWS services and the tabulate library to print clean tables.
 
-# Installation
+## Installation
+
+To use the Cloud Waste Reaper, you will need to install the required libraries. You can do this by running the following command:
+
 pip install -r requirements.txt
 
-# Usage
+## Usage
+
+The Cloud Waste Reaper can be used to scan for unused EBS volumes, calculate potential savings, and delete unused volumes. The following flags are available:
+
+* --scan: List all unused EBS volumes
+* --region: Specify the AWS region to scan (default: ap-south-1)
+* --delete <id_of_ebs_vol>: Delete a specific unused EBS volume
+* --delete-all: Delete all unused EBS volumes
+
+Example usage:
+
 python reaper.py --scan --region ap-south-1
+python reaper.py --delete vol-12345678 --region ap-south-1
+python reaper.py --delete-all --region ap-south-1
 
-# Options
-- --scan        Scan for orphaned EBS volumes
-- --dry-run     Dry run, do not delete volumes
-- --region      Specify AWS region (default: ap-south-1)
+## Requirements
 
-# Example Output
-The tool will print a table with the following columns:
-- Volume ID
-- Size (GB)
-- Type
-- Cost ($)
-- Region
-- Created
+* Python 3.7+
+* boto3
+* tabulate
+* argparse
 
-Followed by the total wasted cash.
+## Notes
 
-# Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+* The Cloud Waste Reaper assumes that the cost of an EBS volume is $0.10 per GB/month.
+* The tool uses the AWS CLI credentials to authenticate with AWS services.
+* The tool will only delete EBS volumes that are in the 'available' state and are not attached to any EC2 instance.
