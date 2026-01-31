@@ -1,63 +1,58 @@
 
 # README.md
 The Cloud Waste Reaper [Built by K.R.A.T.O.S]
+==============================================
 
-Table of Contents
-=================
-1. [Introduction](#introduction)
-2. [Getting Started](#getting-started)
-3. [Usage](#usage)
-4. [Flags](#flags)
-5. [Lambda Setup](#lambda-setup)
-6. [Event Bridge Setup](#event-bridge-setup)
-7. [SES Setup](#ses-setup)
+Introduction
+------------
 
-## Introduction
-The Cloud Waste Reaper is a Python CLI tool designed to detect cloud waste in AWS. It scans for unused resources such as EBS volumes, EC2 instances, S3 buckets, and DynamoDB tables, and provides a report of potential savings.
+The Cloud Waste Reaper is a Python CLI tool designed to detect cloud waste in AWS. It scans for unused resources such as EBS volumes, EC2 instances, S3 buckets, DynamoDB tables, ELB, and EIP, and provides a detailed report on potential cost savings.
 
-## Getting Started
-To get started, clone the repository and install the required dependencies using pip:
-bash
-pip install -r requirements.txt
+Usage
+-----
 
-## Usage
-To run the Cloud Waste Reaper, use the following command:
-bash
-python reaper.py --help
+To run the Cloud Waste Reaper, follow these steps:
 
-This will display the available flags and options.
+1. Install the required dependencies by running `pip install -r requirements.txt`
+2. Configure your AWS credentials by setting the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables
+3. Run the tool using the command `python reaper.py --scan-all`
 
-## Flags
+Flags
+-----
+
 The following flags are available:
-* `--scan-ebs`: Scan for unused EBS volumes
-* `--delete-ebs <id_of_ebs_vol>`: Delete a specific EBS volume
-* `--delete-all-ebs`: Delete all unused EBS volumes
-* `--scan-ec2`: Scan for all EC2 instances
-* `--delete-ec2 <id_of_ec2>`: Delete a specific EC2 instance
-* `--delete-all-ec2`: Delete all EC2 instances
-* `--scan-s3`: Scan for all S3 buckets
-* `--delete-s3 <id_of_s3>`: Delete a specific S3 bucket
-* `--scan-dynamo`: Scan for all DynamoDB tables
-* `--delete-dynamo <id_of_dynamo>`: Delete a specific DynamoDB table
-* `--delete-all-dynamo`: Delete all DynamoDB tables
-* `--scan-all`: Scan for all resources in the specified region
-* `--region`: Specify the AWS region (default: ap-south-1)
 
-## Lambda Setup
-To run the Cloud Waste Reaper in a Lambda function, create a new Lambda function with the following settings:
-* Runtime: Python 3.8
-* Handler: reaper.lambda_handler
-* Environment variables:
-	+ SES_RECIPIENT: dakshsawhney2@gmail.com
-* Role: Attach the necessary permissions to the Lambda function
+* `--scan-all`: Scan all resources (EBS, EC2, S3, DynamoDB, ELB, EIP)
+* `--scan-ebs`: Scan only EBS volumes
+* `--scan-ec2`: Scan only EC2 instances
+* `--scan-s3`: Scan only S3 buckets
+* `--scan-dynamodb`: Scan only DynamoDB tables
+* `--scan-elb`: Scan only ELB
+* `--scan-eip`: Scan only EIP
 
-## Event Bridge Setup
-To schedule the Lambda function to run every Monday at 9:00am, create a new Event Bridge rule with the following settings:
-* Event pattern: Schedule
-* Schedule: cron(0 9 ? * MON *)
-* Target: Lambda function
+Lambda Configuration
+-------------------
 
-## SES Setup
-To send emails using SES, create a new SES configuration set with the following settings:
-* Configuration set name: CloudWasteReaper
-* Email address: dakshsawhney2@gmail.com
+To run the Cloud Waste Reaper inside a Lambda function, follow these steps:
+
+1. Create a new Lambda function with the name `kratos-lambda`
+2. Set the runtime to Python 3.8
+3. Set the handler to `reaper.lambda_handler`
+4. Set the environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+5. Configure the event trigger to run every Monday at 9:00am using Event Bridge
+
+SES Configuration
+----------------
+
+To send email reports using SES, follow these steps:
+
+1. Configure your SES credentials by setting the `SES_RECIPIENT` environment variable
+2. Set up an SES email client using the `boto3` library
+
+Requirements
+------------
+
+* Python 3.8
+* `boto3` library
+* `tabulate` library
+

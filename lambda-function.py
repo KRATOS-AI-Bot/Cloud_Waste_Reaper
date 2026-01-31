@@ -4,6 +4,7 @@ import json
 import boto3
 import argparse
 from datetime import datetime
+import urllib.request
 import urllib.parse
 
 try:
@@ -24,40 +25,51 @@ def print_table(headers, data):
         return table
 
 def scan_ebs_volumes():
-    ebs = boto3.client('ec2')
-    volumes = ebs.describe_volumes(Filters=[{'Name': 'status', 'Values': ['available']}])
+    ebs_client = boto3.client('ec2')
+    volumes = ebs_client.describe_volumes(
+        Filters=[{'Name': 'status', 'Values': ['available']}]
+    )['Volumes']
     data = []
     total_savings = 0
-    for volume in volumes['Volumes']:
+    for volume in volumes:
         size = volume['Size']
+        volume_id = volume['VolumeId']
+        volume_type = volume['VolumeType']
+        created = volume['CreateTime']
         cost = size * 0.10
         total_savings += cost
-        data.append([volume['VolumeId'], size, volume['VolumeType'], cost, volume['CreateTime']])
+        data.append([volume_id, size, volume_type, cost, created])
     return data, total_savings
 
 def scan_ec2_instances():
-    ec2 = boto3.client('ec2')
-    instances = ec2.describe_instances()
+    ec2_client = boto3.client('ec2')
+    instances = ec2_client.describe_instances()
     data = []
     for reservation in instances['Reservations']:
         for instance in reservation['Instances']:
-            data.append([instance['InstanceId'], instance['InstanceType'], instance['State']['Name']])
+            instance_id = instance['InstanceId']
+            instance_type = instance['InstanceType']
+            data.append([instance_id, instance_type])
     return data
 
 def scan_s3_buckets():
-    s3 = boto3.client('s3')
-    buckets = s3.list_buckets()
+    s3_client = boto3.client('s3')
+    buckets = s3_client.list_buckets()
     data = []
     for bucket in buckets['Buckets']:
-        data.append([bucket['Name'], bucket['CreationDate']])
+        bucket_name = bucket['Name']
+        created = bucket['CreationDate']
+        data.append([bucket_name, created])
     return data
 
 def scan_dynamodb_tables():
-    dynamodb = boto3.client('dynamodb')
-    tables = dynamodb.list_tables()
+    dynamodb_client = boto3.client('dynamodb')
+    tables = dynamodb_client.list_tables()
     data = []
-    for table in tables['TableNames']:
-        data.append([table])
+    for table_name in tables['TableNames']:
+        table = dynamodb_client.describe_table(TableName=table_name)
+        created = table['Table']['CreationDateTime']
+        data.append([table_name, created])
     return data
 
 def scan_all_resources():
@@ -68,21 +80,21 @@ def scan_all_resources():
     report = ""
     report += "EBS Volumes:\n"
     report += print_table(['ID', 'Size(GB)', 'Type', 'Cost($)', 'Created'], ebs_data) + "\n"
-    report += "**TOTAL WASTED CASH: $" + str(round(total_savings, 2)) + "**\n\n"
+    report += f"TOTAL WASTED CASH: ${total_savings:.2f}\n\n"
     report += "EC2 Instances:\n"
-    report += print_table(['ID', 'Type', 'State'], ec2_data) + "\n\n"
+    report += print_table(['ID', 'Type'], ec2_data) + "\n\n"
     report += "S3 Buckets:\n"
     report += print_table(['Name', 'Created'], s3_data) + "\n\n"
     report += "DynamoDB Tables:\n"
-    report += print_table(['Name'], dynamodb_data) + "\n"
+    report += print_table(['Name', 'Created'], dynamodb_data) + "\n"
     return report
 
 def send_email_report(body):
+    ses_client = boto3.client('ses')
     recipient = os.environ.get('SES_RECIPIENT')
     if recipient:
-        ses = boto3.client('ses')
         try:
-            ses.send_email(
+            ses_client.send_email(
                 Source='dakshsawhney2@gmail.com',
                 Destination={'ToAddresses': [recipient]},
                 Message={
@@ -108,25 +120,9 @@ def lambda_handler(event, context):
     }
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Cloud Waste Reaper')
-    parser.add_argument('--scan-all', action='store_true', help='Scan all resources')
-    parser.add_argument('--scan-ebs', action='store_true', help='Scan EBS volumes')
-    parser.add_argument('--scan-ec2', action='store_true', help='Scan EC2 instances')
-    parser.add_argument('--scan-s3', action='store_true', help='Scan S3 buckets')
-    parser.add_argument('--scan-dynamodb', action='store_true', help='Scan DynamoDB tables')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--scan-all', action='store_true')
     args = parser.parse_args()
     if args.scan_all:
-        print(scan_all_resources())
-    elif args.scan_ebs:
-        ebs_data, total_savings = scan_ebs_volumes()
-        print(print_table(['ID', 'Size(GB)', 'Type', 'Cost($)', 'Created'], ebs_data))
-        print("**TOTAL WASTED CASH: $" + str(round(total_savings, 2)) + "**")
-    elif args.scan_ec2:
-        ec2_data = scan_ec2_instances()
-        print(print_table(['ID', 'Type', 'State'], ec2_data))
-    elif args.scan_s3:
-        s3_data = scan_s3_buckets()
-        print(print_table(['Name', 'Created'], s3_data))
-    elif args.scan_dynamodb:
-        dynamodb_data = scan_dynamodb_tables()
-        print(print_table(['Name'], dynamodb_data))
+        report = scan_all_resources()
+        print(report)

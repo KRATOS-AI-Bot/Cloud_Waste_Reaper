@@ -1,4 +1,4 @@
-bash
+
+# requirements.txt
 boto3
-argparse
 tabulate
