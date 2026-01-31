@@ -1,6 +1,4 @@
-
+bash
 boto3
 argparse
 tabulate
-urllib
-json

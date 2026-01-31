@@ -1,0 +1,14 @@
+json
+{
+  "EventPattern": "rate(1 week)",
+  "ScheduleExpression": "cron(0 9 ? * MON *)",
+  "Targets": [
+    {
+      "Arn": "arn:aws:lambda:ap-south-1:123456789012:function:kratos-lambda",
+      "Id": "kratos-lambda"
+    }
+  ],
+  "Name": "kratos-lambda-event-bridge-rule",
+  "State": "ENABLED",
+  "Description": "Event Bridge rule to trigger kratos-lambda every Monday at 9:00am"
+}

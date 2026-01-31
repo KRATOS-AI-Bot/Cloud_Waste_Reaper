@@ -1,10 +1,9 @@
 
+import os
+import json
 import argparse
 import boto3
-import json
-import urllib.request
-import urllib.parse
-from tabulate import tabulate
+from botocore.exceptions import ClientError
 from datetime import datetime
 
 def get_ebs_volumes(ec2, region):
@@ -13,21 +12,9 @@ def get_ebs_volumes(ec2, region):
     )['Volumes']
     return ebs_volumes
 
-def calculate_ebs_cost(ebs_volumes):
-    total_cost = 0
-    ebs_data = []
-    for volume in ebs_volumes:
-        size = volume['Size']
-        cost = size * 0.10
-        total_cost += cost
-        ebs_data.append([volume['VolumeId'], size, volume['VolumeType'], cost, volume['CreateTime']])
-    return ebs_data, total_cost
-
 def get_ec2_instances(ec2, region):
-    ec2_instances = ec2.describe_instances(
-        Filters=[{'Name': 'instance-state-name', 'Values': ['running', 'stopped', 'pending', 'shutting-down', 'stopping', 'stopped']}]
-    )['Reservations']
-    return ec2_instances
+    ec2_instances = ec2.describe_instances()
+    return ec2_instances['Reservations']
 
 def get_s3_buckets(s3, region):
     s3_buckets = s3.list_buckets()
@@ -37,31 +24,76 @@ def get_dynamodb_tables(dynamodb, region):
     dynamodb_tables = dynamodb.list_tables()
     return dynamodb_tables['TableNames']
 
-def delete_ebs_volume(ec2, volume_id):
-    ec2.delete_volume(VolumeId=volume_id)
+def calculate_ebs_cost(ebs_volumes):
+    total_cost = 0
+    ebs_report = []
+    for volume in ebs_volumes:
+        size = volume['Size']
+        cost = size * 0.10
+        total_cost += cost
+        ebs_report.append({
+            'ID': volume['VolumeId'],
+            'Size(GB)': size,
+            'Type': volume['VolumeType'],
+            'Cost($)': cost,
+            'Created': volume['CreateTime']
+        })
+    return ebs_report, total_cost
 
-def delete_ec2_instance(ec2, instance_id):
-    ec2.terminate_instances(InstanceIds=[instance_id])
-
-def delete_s3_bucket(s3, bucket_name):
-    s3.delete_bucket(Bucket=bucket_name)
-
-def delete_dynamodb_table(dynamodb, table_name):
-    dynamodb.delete_table(TableName=table_name)
-
-def send_email(ses, to, subject, body):
-    ses.send_email(
-        Source='dakshsawhney2@gmail.com',
-        Destination={'ToAddresses': [to]},
-        Message={
-            'Subject': {'Data': subject},
-            'Body': {'Text': {'Data': body}}
-        }
-    )
+def lambda_handler(event, context):
+    region = os.environ.get('AWS_REGION', 'ap-south-1')
+    ec2 = boto3.client('ec2', region_name=region)
+    s3 = boto3.client('s3', region_name=region)
+    dynamodb = boto3.client('dynamodb', region_name=region)
+    ses = boto3.client('ses', region_name=region)
+    report_body = ''
+    if event.get('scan_all'):
+        ebs_volumes = get_ebs_volumes(ec2, region)
+        ebs_report, total_ebs_cost = calculate_ebs_cost(ebs_volumes)
+        ec2_instances = get_ec2_instances(ec2, region)
+        s3_buckets = get_s3_buckets(s3, region)
+        dynamodb_tables = get_dynamodb_tables(dynamodb, region)
+        report_body += 'EBS Volumes:\n'
+        for ebs in ebs_report:
+            report_body += f"ID: {ebs['ID']}, Size(GB): {ebs['Size(GB)']}, Type: {ebs['Type']}, Cost($): {ebs['Cost($)']}, Created: {ebs['Created']}\n"
+        report_body += f'Total EBS Cost: ${total_ebs_cost:.2f}\n\n'
+        report_body += 'EC2 Instances:\n'
+        for instance in ec2_instances:
+            report_body += f"ID: {instance['Instances'][0]['InstanceId']}\n"
+        report_body += '\n'
+        report_body += 'S3 Buckets:\n'
+        for bucket in s3_buckets:
+            report_body += f"Name: {bucket['Name']}\n"
+        report_body += '\n'
+        report_body += 'DynamoDB Tables:\n'
+        for table in dynamodb_tables:
+            report_body += f"Name: {table}\n"
+        report_body += '\n'
+        ses_recipient = os.environ.get('SES_RECIPIENT')
+        if ses_recipient:
+            try:
+                ses.send_email(
+                    Source='dakshsawhney2@gmail.com',
+                    Destination={'ToAddresses': [ses_recipient]},
+                    Message={
+                        'Body': {
+                            'Text': {
+                                'Data': report_body
+                            }
+                        },
+                        'Subject': 'Cloud Waste Report'
+                    }
+                )
+            except ClientError as e:
+                print(e)
+    return {
+        'statusCode': 200,
+        'body': report_body
+    }
 
 def main():
     parser = argparse.ArgumentParser(description='Cloud Waste Reaper')
-    parser.add_argument('--scan-ebs', action='store_true', help='Scan for unused EBS volumes')
+    parser.add_argument('--scan-ebs', action='store_true', help='Scan for EBS volumes')
     parser.add_argument('--delete-ebs', help='Delete EBS volume by ID')
     parser.add_argument('--delete-all-ebs', action='store_true', help='Delete all unused EBS volumes')
     parser.add_argument('--scan-ec2', action='store_true', help='Scan for EC2 instances')
@@ -72,76 +104,56 @@ def main():
     parser.add_argument('--scan-dynamo', action='store_true', help='Scan for DynamoDB tables')
     parser.add_argument('--delete-dynamo', help='Delete DynamoDB table by name')
     parser.add_argument('--delete-all-dynamo', action='store_true', help='Delete all DynamoDB tables')
-    parser.add_argument('--scan-all', action='store_true', help='Scan for all resources')
+    parser.add_argument('--scan-all', action='store_true', help='Scan all resources')
     parser.add_argument('--region', default='ap-south-1', help='AWS region')
     args = parser.parse_args()
-
-    ec2 = boto3.client('ec2', region_name=args.region)
-    s3 = boto3.client('s3', region_name=args.region)
-    dynamodb = boto3.client('dynamodb', region_name=args.region)
-    ses = boto3.client('ses', region_name=args.region)
-
+    region = args.region
+    ec2 = boto3.client('ec2', region_name=region)
+    s3 = boto3.client('s3', region_name=region)
+    dynamodb = boto3.client('dynamodb', region_name=region)
     if args.scan_ebs:
-        ebs_volumes = get_ebs_volumes(ec2, args.region)
-        ebs_data, total_cost = calculate_ebs_cost(ebs_volumes)
-        print(tabulate(ebs_data, headers=['ID', 'Size(GB)', 'Type', 'Cost($)', 'Created'], tablefmt='grid'))
-        print(f'\033[1m\033[91mTOTAL WASTED CASH: ${total_cost:.2f}\033[0m')
-
-    if args.delete_ebs:
-        delete_ebs_volume(ec2, args.delete_ebs)
-
-    if args.delete_all_ebs:
-        ebs_volumes = get_ebs_volumes(ec2, args.region)
-        for volume in ebs_volumes:
-            delete_ebs_volume(ec2, volume['VolumeId'])
-
-    if args.scan_ec2:
-        ec2_instances = get_ec2_instances(ec2, args.region)
+        ebs_volumes = get_ebs_volumes(ec2, region)
+        ebs_report, total_ebs_cost = calculate_ebs_cost(ebs_volumes)
+        print('EBS Volumes:')
+        from tabulate import tabulate
+        print(tabulate(ebs_report, headers='keys', tablefmt='psql'))
+        print(f'Total EBS Cost: ${total_ebs_cost:.2f}')
+    elif args.scan_ec2:
+        ec2_instances = get_ec2_instances(ec2, region)
+        print('EC2 Instances:')
         for instance in ec2_instances:
             print(instance['Instances'][0]['InstanceId'])
-
-    if args.delete_ec2:
-        delete_ec2_instance(ec2, args.delete_ec2)
-
-    if args.delete_all_ec2:
-        ec2_instances = get_ec2_instances(ec2, args.region)
-        for instance in ec2_instances:
-            delete_ec2_instance(ec2, instance['Instances'][0]['InstanceId'])
-
-    if args.scan_s3:
-        s3_buckets = get_s3_buckets(s3, args.region)
+    elif args.scan_s3:
+        s3_buckets = get_s3_buckets(s3, region)
+        print('S3 Buckets:')
         for bucket in s3_buckets:
             print(bucket['Name'])
-
-    if args.delete_s3:
-        delete_s3_bucket(s3, args.delete_s3)
-
-    if args.scan_dynamo:
-        dynamodb_tables = get_dynamodb_tables(dynamodb, args.region)
+    elif args.scan_dynamo:
+        dynamodb_tables = get_dynamodb_tables(dynamodb, region)
+        print('DynamoDB Tables:')
         for table in dynamodb_tables:
             print(table)
-
-    if args.delete_dynamo:
-        delete_dynamodb_table(dynamodb, args.delete_dynamo)
-
-    if args.delete_all_dynamo:
-        dynamodb_tables = get_dynamodb_tables(dynamodb, args.region)
+    elif args.scan_all:
+        ebs_volumes = get_ebs_volumes(ec2, region)
+        ebs_report, total_ebs_cost = calculate_ebs_cost(ebs_volumes)
+        ec2_instances = get_ec2_instances(ec2, region)
+        s3_buckets = get_s3_buckets(s3, region)
+        dynamodb_tables = get_dynamodb_tables(dynamodb, region)
+        print('EBS Volumes:')
+        from tabulate import tabulate
+        print(tabulate(ebs_report, headers='keys', tablefmt='psql'))
+        print(f'Total EBS Cost: ${total_ebs_cost:.2f}\n')
+        print('EC2 Instances:')
+        for instance in ec2_instances:
+            print(instance['Instances'][0]['InstanceId'])
+        print('\n')
+        print('S3 Buckets:')
+        for bucket in s3_buckets:
+            print(bucket['Name'])
+        print('\n')
+        print('DynamoDB Tables:')
         for table in dynamodb_tables:
-            delete_dynamodb_table(dynamodb, table)
-
-    if args.scan_all:
-        ebs_volumes = get_ebs_volumes(ec2, args.region)
-        ec2_instances = get_ec2_instances(ec2, args.region)
-        s3_buckets = get_s3_buckets(s3, args.region)
-        dynamodb_tables = get_dynamodb_tables(dynamodb, args.region)
-        data = {
-            'EBS Volumes': ebs_volumes,
-            'EC2 Instances': ec2_instances,
-            'S3 Buckets': s3_buckets,
-            'DynamoDB Tables': dynamodb_tables
-        }
-        print(json.dumps(data, indent=4))
-        send_email(ses, 'dakshsawhney2@gmail.com', 'Cloud Waste Reaper Scan', json.dumps(data, indent=4))
+            print(table)
 
 if __name__ == '__main__':
     main()
