@@ -1,4 +1,4 @@
-python
+
 import boto3
 import argparse
 from tabulate import tabulate
@@ -15,13 +15,14 @@ def calculate_savings(volumes):
     table = []
     for volume in volumes:
         size = volume['Size']
-        savings = size * 0.10
-        total_savings += savings
+        volume_type = volume['VolumeType']
+        cost = size * 0.10
+        total_savings += cost
         table.append([
             volume['VolumeId'],
             size,
-            volume['VolumeType'],
-            round(savings, 2),
+            volume_type,
+            round(cost, 2),
             volume['AvailabilityZone'],
             volume['CreateTime'].strftime('%Y-%m-%d %H:%M:%S')
         ])
@@ -30,7 +31,7 @@ def calculate_savings(volumes):
 def main():
     parser = argparse.ArgumentParser(description='Cloud Waste Reaper')
     parser.add_argument('--scan', action='store_true', help='Scan for orphaned EBS volumes')
-    parser.add_argument('--dry-run', action='store_true', help='Dry run, do not print results')
+    parser.add_argument('--dry-run', action='store_true', help='Dry run, do not delete volumes')
     args = parser.parse_args()
 
     if args.scan:
@@ -38,9 +39,8 @@ def main():
         try:
             volumes = get_orphaned_volumes(ec2)
             table, total_savings = calculate_savings(volumes)
-            if not args.dry_run:
-                print(tabulate(table, headers=['Volume ID', 'Size(GB)', 'Type', 'Cost($)', 'Region', 'Created'], tablefmt='grid'))
-                print(f'\033[1m\033[91mTOTAL WASTED CASH: ${round(total_savings, 2)}\033[0m')
+            print(tabulate(table, headers=['Volume ID', 'Size(GB)', 'Type', 'Cost($)', 'Region', 'Created'], tablefmt='grid'))
+            print(f'\033[1m\033[91mTOTAL WASTED CASH: ${round(total_savings, 2)}\033[0m')
         except Exception as e:
             print(f'Error: {str(e)}')
 
