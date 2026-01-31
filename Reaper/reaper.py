@@ -1,6 +1,6 @@
 
-import argparse
 import boto3
+import argparse
 from tabulate import tabulate
 from datetime import datetime
 
@@ -9,7 +9,7 @@ def get_orphaned_volumes(ec2):
         volumes = ec2.describe_volumes(
             Filters=[{'Name': 'status', 'Values': ['available']}]
         )['Volumes']
-        return [volume for volume in volumes if not volume['Attachments']]
+        return volumes
     except Exception as e:
         print(f"Error: {e}")
         return []
@@ -19,17 +19,12 @@ def calculate_savings(volumes):
     table_data = []
     for volume in volumes:
         size = volume['Size']
+        volume_id = volume['VolumeId']
         volume_type = volume['VolumeType']
+        created = volume['CreateTime'].strftime('%Y-%m-%d %H:%M:%S')
         cost = size * 0.10
         total_savings += cost
-        table_data.append([
-            volume['VolumeId'],
-            size,
-            volume_type,
-            f"${cost:.2f}",
-            volume['AvailabilityZone'],
-            volume['CreateTime'].strftime('%Y-%m-%d %H:%M:%S')
-        ])
+        table_data.append([volume_id, size, volume_type, f"${cost:.2f}", 'ap-south-1', created])
     return table_data, total_savings
 
 def main():
@@ -38,9 +33,8 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='Dry run, do not calculate savings')
     args = parser.parse_args()
 
-    ec2 = boto3.client('ec2', region_name='ap-south-1')
-
     if args.scan:
+        ec2 = boto3.client('ec2', region_name='ap-south-1')
         volumes = get_orphaned_volumes(ec2)
         table_data, total_savings = calculate_savings(volumes)
         print(tabulate(table_data, headers=['Volume ID', 'Size(GB)', 'Type', 'Cost($)', 'Region', 'Created'], tablefmt='grid'))
