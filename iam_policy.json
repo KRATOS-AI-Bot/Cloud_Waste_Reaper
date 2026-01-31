@@ -1,0 +1,50 @@
+json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeInstances",
+                "ec2:DescribeVolumes",
+                "ec2:DeleteVolume",
+                "s3:ListBuckets",
+                "s3:DeleteBucket",
+                "dynamodb:ListTables",
+                "dynamodb:DeleteTable",
+                "ses:SendEmail",
+                "ses:SendRawEmail",
+                "iam:PassRole",
+                "lambda:InvokeFunction",
+                "events:PutRule",
+                "events:PutTargets",
+                "events:PutEventBus",
+                "cloudwatch:PutMetricData",
+                "cloudwatch:GetMetricStatistics",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "VisualEditor1",
+            "Effect": "Allow",
+            "Action": "logs:CreateLogGroup",
+            "Resource": "arn:aws:logs:*:*:*"
+        },
+        {
+            "Sid": "VisualEditor2",
+            "Effect": "Allow",
+            "Action": "logs:CreateLogStream",
+            "Resource": "arn:aws:logs:*:*:*"
+        },
+        {
+            "Sid": "VisualEditor3",
+            "Effect": "Allow",
+            "Action": "logs:PutLogEvents",
+            "Resource": "arn:aws:logs:*:*:*"
+        }
+    ]
+}
