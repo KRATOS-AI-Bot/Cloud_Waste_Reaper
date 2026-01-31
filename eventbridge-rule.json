@@ -8,7 +8,7 @@
       "Id": "kratos-lambda"
     }
   ],
-  "Name": "kratos-lambda-eventbridge-rule",
+  "Name": "kratos-lambda-schedule",
   "State": "ENABLED",
-  "Description": "Event Bridge rule to trigger kratos-lambda every Monday at 9:00am"
+  "Description": "Trigger kratos-lambda every Monday at 9:00am"
 }

@@ -30,16 +30,14 @@ def scan_ebs_volumes():
         Filters=[{'Name': 'status', 'Values': ['available']}]
     )['Volumes']
     data = []
-    total_savings = 0
+    total_cost = 0
     for volume in volumes:
         size = volume['Size']
-        volume_id = volume['VolumeId']
         volume_type = volume['VolumeType']
-        created = volume['CreateTime']
         cost = size * 0.10
-        total_savings += cost
-        data.append([volume_id, size, volume_type, cost, created])
-    return data, total_savings
+        total_cost += cost
+        data.append([volume['VolumeId'], size, volume_type, cost, volume['CreateTime']])
+    return data, total_cost
 
 def scan_ec2_instances():
     ec2_client = boto3.client('ec2')
@@ -47,9 +45,7 @@ def scan_ec2_instances():
     data = []
     for reservation in instances['Reservations']:
         for instance in reservation['Instances']:
-            instance_id = instance['InstanceId']
-            instance_type = instance['InstanceType']
-            data.append([instance_id, instance_type])
+            data.append([instance['InstanceId'], instance['InstanceType'], instance['State']['Name']])
     return data
 
 def scan_s3_buckets():
@@ -57,36 +53,34 @@ def scan_s3_buckets():
     buckets = s3_client.list_buckets()
     data = []
     for bucket in buckets['Buckets']:
-        bucket_name = bucket['Name']
-        created = bucket['CreationDate']
-        data.append([bucket_name, created])
+        data.append([bucket['Name'], bucket['CreationDate']])
     return data
 
 def scan_dynamodb_tables():
     dynamodb_client = boto3.client('dynamodb')
     tables = dynamodb_client.list_tables()
     data = []
-    for table_name in tables['TableNames']:
-        table = dynamodb_client.describe_table(TableName=table_name)
-        created = table['Table']['CreationDateTime']
-        data.append([table_name, created])
+    for table in tables['TableNames']:
+        data.append([table])
     return data
 
 def scan_all_resources():
-    ebs_data, total_savings = scan_ebs_volumes()
+    ebs_data, ebs_total_cost = scan_ebs_volumes()
     ec2_data = scan_ec2_instances()
     s3_data = scan_s3_buckets()
     dynamodb_data = scan_dynamodb_tables()
     report = ""
     report += "EBS Volumes:\n"
-    report += print_table(['ID', 'Size(GB)', 'Type', 'Cost($)', 'Created'], ebs_data) + "\n"
-    report += f"TOTAL WASTED CASH: ${total_savings:.2f}\n\n"
+    report += print_table(["ID", "Size(GB)", "Type", "Cost($)", "Created"], ebs_data)
+    report += "\nTOTAL WASTED CASH: **${:.2f}**\n\n".format(ebs_total_cost)
     report += "EC2 Instances:\n"
-    report += print_table(['ID', 'Type'], ec2_data) + "\n\n"
+    report += print_table(["ID", "Type", "State"], ec2_data)
+    report += "\n\n"
     report += "S3 Buckets:\n"
-    report += print_table(['Name', 'Created'], s3_data) + "\n\n"
+    report += print_table(["Name", "Created"], s3_data)
+    report += "\n\n"
     report += "DynamoDB Tables:\n"
-    report += print_table(['Name', 'Created'], dynamodb_data) + "\n"
+    report += print_table(["Name"], dynamodb_data)
     return report
 
 def send_email_report(body):
@@ -109,7 +103,7 @@ def send_email_report(body):
                 }
             )
         except Exception as e:
-            print(f"Error sending email: {e}")
+            print("Error sending email: {}".format(e))
 
 def lambda_handler(event, context):
     report = scan_all_resources()

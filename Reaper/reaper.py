@@ -65,16 +65,24 @@ def scan_all_resources():
     ec2_data = scan_ec2_instances()
     s3_data = scan_s3_buckets()
     dynamodb_data = scan_dynamodb_tables()
+    
     report = ""
     report += "EBS Volumes:\n"
-    report += print_table(['ID', 'Size(GB)', 'Type', 'Cost($)', 'Created'], ebs_data) + "\n"
-    report += "**TOTAL WASTED CASH: $" + str(round(total_savings, 2)) + "**\n\n"
+    report += print_table(["ID", "Size(GB)", "Type", "Cost($)", "Created"], ebs_data)
+    report += "\nTOTAL WASTED CASH: **${:.2f}**\n\n".format(total_savings)
+    
     report += "EC2 Instances:\n"
-    report += print_table(['ID', 'Type', 'State'], ec2_data) + "\n\n"
+    report += print_table(["ID", "Type", "State"], ec2_data)
+    report += "\n\n"
+    
     report += "S3 Buckets:\n"
-    report += print_table(['Name', 'Created'], s3_data) + "\n\n"
+    report += print_table(["Name", "Created"], s3_data)
+    report += "\n\n"
+    
     report += "DynamoDB Tables:\n"
-    report += print_table(['Name'], dynamodb_data) + "\n"
+    report += print_table(["Name"], dynamodb_data)
+    report += "\n\n"
+    
     return report
 
 def send_email_report(body):
@@ -88,23 +96,25 @@ def send_email_report(body):
                 Message={
                     'Body': {
                         'Text': {
-                            'Data': body
+                            'Data': body,
+                            'Charset': 'utf-8'
                         }
                     },
                     'Subject': {
-                        'Data': 'Cloud Waste Report'
+                        'Data': 'Cloud Waste Report',
+                        'Charset': 'utf-8'
                     }
                 }
             )
         except Exception as e:
-            print(f"Error sending email: {e}")
+            print("Error sending email: {}".format(e))
 
 def lambda_handler(event, context):
     report = scan_all_resources()
     send_email_report(report)
     return {
         'statusCode': 200,
-        'body': json.dumps({'message': 'Report sent successfully'})
+        'body': json.dumps('Report sent successfully')
     }
 
 if __name__ == "__main__":
@@ -115,18 +125,19 @@ if __name__ == "__main__":
     parser.add_argument('--scan-s3', action='store_true', help='Scan S3 buckets')
     parser.add_argument('--scan-dynamodb', action='store_true', help='Scan DynamoDB tables')
     args = parser.parse_args()
+    
     if args.scan_all:
         print(scan_all_resources())
     elif args.scan_ebs:
         ebs_data, total_savings = scan_ebs_volumes()
-        print(print_table(['ID', 'Size(GB)', 'Type', 'Cost($)', 'Created'], ebs_data))
-        print("**TOTAL WASTED CASH: $" + str(round(total_savings, 2)) + "**")
+        print(print_table(["ID", "Size(GB)", "Type", "Cost($)", "Created"], ebs_data))
+        print("\nTOTAL WASTED CASH: **${:.2f}**".format(total_savings))
     elif args.scan_ec2:
         ec2_data = scan_ec2_instances()
-        print(print_table(['ID', 'Type', 'State'], ec2_data))
+        print(print_table(["ID", "Type", "State"], ec2_data))
     elif args.scan_s3:
         s3_data = scan_s3_buckets()
-        print(print_table(['Name', 'Created'], s3_data))
+        print(print_table(["Name", "Created"], s3_data))
     elif args.scan_dynamodb:
         dynamodb_data = scan_dynamodb_tables()
-        print(print_table(['Name'], dynamodb_data))
+        print(print_table(["Name"], dynamodb_data))

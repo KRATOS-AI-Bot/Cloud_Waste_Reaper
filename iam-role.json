@@ -3,8 +3,11 @@ import json
 import os
 import boto3
 import urllib
+from urllib.parse import urlencode
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import argparse
-from datetime import datetime
+import sys
 
 try:
     from tabulate import tabulate
@@ -17,23 +20,39 @@ def print_table(headers, data):
         return tabulate(data, headers, tablefmt="grid")
     else:
         table = ""
-        table += "| " + " | ".join(headers) + " |\n"
-        table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+        table += "+"
+        for header in headers:
+            table += "---+"
+        table += "\n"
+        table += "|"
+        for header in headers:
+            table += f" {header} |"
+        table += "\n"
+        table += "+"
+        for header in headers:
+            table += "---+"
+        table += "\n"
         for row in data:
-            table += "| " + " | ".join(map(str, row)) + " |\n"
+            table += "|"
+            for item in row:
+                table += f" {item} |"
+            table += "\n"
         return table
 
 def scan_ebs_volumes():
     ec2 = boto3.client('ec2')
-    volumes = ec2.describe_volumes(Filters=[{'Name': 'status', 'Values': ['available']}])
+    ebs_volumes = ec2.describe_volumes(
+        Filters=[{'Name': 'status', 'Values': ['available']}]
+    )['Volumes']
     data = []
-    total_savings = 0
-    for volume in volumes['Volumes']:
+    total_cost = 0
+    for volume in ebs_volumes:
         size = volume['Size']
+        volume_type = volume['VolumeType']
         cost = size * 0.10
-        total_savings += cost
-        data.append([volume['VolumeId'], size, volume['VolumeType'], cost, volume['CreateTime']])
-    return data, total_savings
+        total_cost += cost
+        data.append([volume['VolumeId'], size, volume_type, f"${cost:.2f}", volume['CreateTime']])
+    return data, total_cost
 
 def scan_ec2_instances():
     ec2 = boto3.client('ec2')
@@ -61,69 +80,73 @@ def scan_dynamodb_tables():
     return data
 
 def scan_all_resources():
-    ebs_data, total_savings = scan_ebs_volumes()
+    ebs_data, ebs_total_cost = scan_ebs_volumes()
     ec2_data = scan_ec2_instances()
     s3_data = scan_s3_buckets()
     dynamodb_data = scan_dynamodb_tables()
     report = ""
     report += "EBS Volumes:\n"
-    report += print_table(['ID', 'Size(GB)', 'Type', 'Cost($)', 'Created'], ebs_data) + "\n"
-    report += "**TOTAL WASTED CASH: $" + str(round(total_savings, 2)) + "**\n\n"
+    report += print_table(["ID", "Size(GB)", "Type", "Cost($)", "Created"], ebs_data)
+    report += f"\nTOTAL WASTED CASH: ${ebs_total_cost:.2f}\n\n"
     report += "EC2 Instances:\n"
-    report += print_table(['ID', 'Type', 'State'], ec2_data) + "\n\n"
+    report += print_table(["ID", "Type", "State"], ec2_data)
+    report += "\n\n"
     report += "S3 Buckets:\n"
-    report += print_table(['Name', 'Created'], s3_data) + "\n\n"
+    report += print_table(["Name", "Created"], s3_data)
+    report += "\n\n"
     report += "DynamoDB Tables:\n"
-    report += print_table(['Name'], dynamodb_data) + "\n"
+    report += print_table(["Name"], dynamodb_data)
     return report
 
 def send_email_report(body):
     recipient = os.environ.get('SES_RECIPIENT')
-    if recipient:
-        ses = boto3.client('ses')
-        try:
-            ses.send_email(
-                Source='dakshsawhney2@gmail.com',
-                Destination={'ToAddresses': [recipient]},
-                Message={
-                    'Body': {
-                        'Text': {
-                            'Data': body
-                        }
-                    },
-                    'Subject': {
-                        'Data': 'Cloud Waste Report'
-                    }
-                }
-            )
-        except Exception as e:
-            print(f"Error sending email: {e}")
+    if not recipient:
+        print("SES_RECIPIENT environment variable not set. Email not sent.")
+        return
+    ses = boto3.client('ses')
+    msg = MIMEMultipart()
+    msg['Subject'] = 'Cloud Waste Report'
+    msg['From'] = 'dakshsawhney2@gmail.com'
+    msg['To'] = recipient
+    msg.attach(MIMEText(body, 'plain'))
+    try:
+        ses.send_raw_email(
+            RawMessage={'Data': msg.as_string()}
+        )
+    except Exception as e:
+        print(f"Error sending email: {e}")
 
 def lambda_handler(event, context):
     report = scan_all_resources()
     send_email_report(report)
     return {
         'statusCode': 200,
-        'body': json.dumps('Report sent successfully')
+        'body': report
     }
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--scan-ebs', action='store_true')
-    parser.add_argument('--scan-ec2', action='store_true')
-    parser.add_argument('--scan-s3', action='store_true')
-    parser.add_argument('--scan-dynamodb', action='store_true')
-    parser.add_argument('--scan-all', action='store_true')
+    parser = argparse.ArgumentParser(description='Cloud Waste Reaper')
+    parser.add_argument('--scan-all', action='store_true', help='Scan all resources')
+    parser.add_argument('--scan-ebs', action='store_true', help='Scan EBS volumes')
+    parser.add_argument('--scan-ec2', action='store_true', help='Scan EC2 instances')
+    parser.add_argument('--scan-s3', action='store_true', help='Scan S3 buckets')
+    parser.add_argument('--scan-dynamodb', action='store_true', help='Scan DynamoDB tables')
     args = parser.parse_args()
     if args.scan_all:
         print(scan_all_resources())
     elif args.scan_ebs:
-        ebs_data, total_savings = scan_ebs_volumes()
-        print(print_table(['ID', 'Size(GB)', 'Type', 'Cost($)', 'Created'], ebs_data))
-        print("**TOTAL WASTED CASH: $" + str(round(total_savings, 2)) + "**")
+        ebs_data, ebs_total_cost = scan_ebs_volumes()
+        print(print_table(["ID", "Size(GB)", "Type", "Cost($)", "Created"], ebs_data))
+        print(f"TOTAL WASTED CASH: ${ebs_total_cost:.2f}")
     elif args.scan_ec2:
-        print(print_table(['ID', 'Type', 'State'], scan_ec2_instances()))
+        ec2_data = scan_ec2_instances()
+        print(print_table(["ID", "Type", "State"], ec2_data))
     elif args.scan_s3:
-        print(print_table(['Name', 'Created'], scan_s3_buckets()))
+        s3_data = scan_s3_buckets()
+        print(print_table(["Name", "Created"], s3_data))
     elif args.scan_dynamodb:
-        print(print_table(['Name'], scan_dynamodb_tables()))
+        dynamodb_data = scan_dynamodb_tables()
+        print(print_table(["Name"], dynamodb_data))
+    else:
+        parser.print_help()
+        sys.exit(1)
